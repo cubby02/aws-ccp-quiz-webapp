@@ -1,12 +1,13 @@
 {
   "name": "quiz-webapp",
   "version": "0.0.0",
-  "homepage": "https://cubby02.github.io/aws-ccp-quiz-webapp/",   
+  "homepage": "https://cubby02.github.io/aws-ccp-quiz-webapp/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "gh-pages -d dist"                                   
+    "predeploy": "git checkout main && npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "react": "^18.2.0",
