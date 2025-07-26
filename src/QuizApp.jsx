@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 const SHUFFLE = (array) => {
   const result = [...array];
@@ -11,47 +11,89 @@ const SHUFFLE = (array) => {
   return result;
 };
 
+const DOMAIN_PERCENTAGES = {
+  "Cloud Concepts": 0.24,
+  "Security and Compliance": 0.30,
+  "Cloud Technology": 0.34,
+  "Billing, Pricing and Support": 0.12,
+};
 
 export default function QuizApp() {
   const [questions, setQuestions] = useState([]);
   const [userAnswers, setUserAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+  const [domainScores, setDomainScores] = useState({});
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [quizStarted, setQuizStarted] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(90 * 60);
+
+  const timerRef = useRef();
 
   useEffect(() => {
-  fetch(
-    "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
-  )
-    .then((res) => res.json())
-    .then((data) => {
-      const shuffled = SHUFFLE(data).slice(0, 5).map((q) => {
-        // Determine if it's checkbox (multiple answers) or radio (single answer)
-        const isCheckbox = q["Question Type"]?.toLowerCase() === "checkbox";
+    fetch(
+      "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        const domains = Object.keys(DOMAIN_PERCENTAGES);
+        const grouped = {};
+        domains.forEach((d) => (grouped[d] = []));
 
-        const correct = isCheckbox
-          ? q["Correct Answers"]
-              .split(/\s*;\s*|\s*,\s*/) // split by comma or semicolon
-              .map((c) => c.trim())
-              .filter((c) => c)
-          : [q["Correct Answers"].trim()]; // radio: single-element array
+        data.forEach((q) => {
+          const domain = q["Domain"].trim();
+          if (grouped[domain]) grouped[domain].push(q);
+        });
 
-        const allOptions = [q["Option 1"], q["Option 2"], q["Option 3"], q["Option 4"]];
+        const selected = domains.flatMap((domain) => {
+          const total = Math.round(DOMAIN_PERCENTAGES[domain] * 65);
+          return SHUFFLE(grouped[domain]).slice(0, total);
+        });
 
-        // Include any correct answers not in the listed options
-        const extraCorrect = correct.filter((c) => !allOptions.includes(c));
-        const options = SHUFFLE([...allOptions, ...extraCorrect]);
+        const shuffled = SHUFFLE(selected).map((q) => {
+          const isCheckbox = q["Question Type"].toLowerCase() === "checkbox";
+          const correct = isCheckbox
+            ? q["Correct Answers"]
+                .split(/\s*;\s*/g)
+                .map((c) => c.trim())
+                .filter((c) => c)
+            : [q["Correct Answers"].trim()];
 
-        return {
-          ...q,
-          correct,
-          options,
-        };
+          const options = SHUFFLE([
+            q["Option 1"],
+            q["Option 2"],
+            q["Option 3"],
+            q["Option 4"],
+            ...correct.filter((c) => ![
+              q["Option 1"],
+              q["Option 2"],
+              q["Option 3"],
+              q["Option 4"],
+            ].includes(c)),
+          ]);
+
+          return { ...q, correct, options };
+        });
+
+        setQuestions(shuffled);
       });
+  }, []);
 
-      setQuestions(shuffled);
-    });
-}, []);
-
+  useEffect(() => {
+    if (quizStarted && !submitted) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            handleSubmit();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [quizStarted]);
 
   const handleChange = (index, value, type) => {
     setUserAnswers((prev) => {
@@ -69,101 +111,199 @@ export default function QuizApp() {
 
   const handleSubmit = () => {
     let score = 0;
+    const domainScores = {};
+
     questions.forEach((q, i) => {
       const correct = q.correct.sort();
       const answer = userAnswers[i] || (q["Question Type"] === "checkbox" ? [] : "");
       const userAnswer = Array.isArray(answer) ? answer.sort() : [answer];
-      if (JSON.stringify(correct) === JSON.stringify(userAnswer)) score++;
+      const isCorrect = JSON.stringify(correct) === JSON.stringify(userAnswer);
+
+      if (isCorrect) {
+        score++;
+        domainScores[q["Domain"]] = (domainScores[q["Domain"]] || 0) + 1;
+      }
     });
+
     setScore(score);
+    setDomainScores(domainScores);
     setSubmitted(true);
+    clearInterval(timerRef.current);
   };
 
-  return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Quiz</h1>
-      {questions.map((q, i) => {
-        const correctAnswers = q.correct;
-        const userAnswer = userAnswers[i] || [];
-        const isCorrect =
-          submitted &&
-          JSON.stringify([...correctAnswers].sort()) ===
-            JSON.stringify((Array.isArray(userAnswer) ? userAnswer : [userAnswer]).sort());
+  const percent = ((score / questions.length) * 100).toFixed(2);
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
 
-        return (
-          <div
-            key={i}
-            className="p-4 border rounded-lg shadow space-y-2 bg-white"
-          >
-            <h2 className="font-semibold">
-              {i + 1}. {q["Question"]}
-            </h2>
-            <div className="space-y-2">
-              {q.options.map((opt, j) => {
-                const selected = Array.isArray(userAnswer)
-                  ? userAnswer.includes(opt)
-                  : userAnswer === opt;
-                const isCorrectOpt = correctAnswers.includes(opt);
-                const isWrongSelection = submitted && selected && !isCorrectOpt;
-                const isRightSelection = submitted && selected && isCorrectOpt;
-                const isUnselectedCorrect =
-                  submitted && !selected && isCorrectOpt;
-
-                const color = isWrongSelection
-                  ? "bg-red-100 border-red-500"
-                  : isRightSelection || isUnselectedCorrect
-                  ? "bg-green-100 border-green-500"
-                  : "";
-
-                return (
-                  <label
-                    key={j}
-                    className={`flex items-center p-2 border rounded cursor-pointer ${color}`}
-                  >
-                    <input
-                      type={q["Question Type"]}
-                      name={`question-${i}`}
-                      value={opt}
-                      checked={selected}
-                      disabled={submitted}
-                      onChange={() =>
-                        handleChange(i, opt, q["Question Type"])
-                      }
-                      className="mr-2"
-                    />
-                    {opt}
-                  </label>
-                );
-              })}
-            </div>
-
-            {submitted && (
-              <div className="text-sm text-gray-600">
-                <p>
-                  <strong>Feedback:</strong> {q["Feedback"]}
-                </p>
-                <p>
-                  <strong>Correct Answer:</strong>{" "}
-                  {q.correct && q.correct.join(", ")}
-                </p>
-              </div>
-            )}
-          </div>
-        );
-
-      })}
-      {!submitted ? (
+  if (!quizStarted) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto space-y-4 text-center">
+        <h1 className="text-3xl font-bold">AWS CCP Mock Exam</h1>
         <button
-          onClick={handleSubmit}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          onClick={() => setQuizStarted(true)}
+          className="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700"
         >
-          Submit
+          Start Quiz
         </button>
-      ) : (
-        <p className="text-xl font-semibold">
-          Score: {score} / {questions.length}
-        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">AWS CCP Mock Exam</h1>
+      {submitted && (
+        <div className="text-center space-y-2">
+          <p className="text-3xl font-bold">{percent}%</p>
+          <p className="text-lg font-semibold">
+            {percent >= 70 ? "You passed!" : "You failed. Try again."}
+          </p>
+          <p className="text-md">
+            Score: {score} / {questions.length}
+          </p>
+          <div className="text-left mt-4 space-y-1">
+            <h3 className="font-semibold">Domain Scores:</h3>
+            {Object.entries(domainScores).map(([domain, count]) => (
+              <p key={domain}>
+                {domain}: {count} correct
+              </p>
+            ))}
+          </div>
+        </div>
       )}
+
+      {!submitted && (
+        <div className="space-y-2">
+          <p className="text-lg font-semibold text-center">
+            Time Left: {minutes}:{seconds.toString().padStart(2, "0")}
+          </p>
+          <div className="w-full h-4 bg-gray-200 rounded overflow-hidden">
+            <div
+              className="h-4 bg-blue-600 transition-all duration-1000"
+              style={{ width: `${(timeLeft / (90 * 60)) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2 sticky top-4 h-fit">
+          {questions.map((_, idx) => {
+            const isAnswered = userAnswers[idx] !== undefined;
+            const isActive = idx === currentQuestion;
+            const isWrong = submitted && JSON.stringify((Array.isArray(userAnswers[idx]) ? userAnswers[idx].sort() : [userAnswers[idx]])) !== JSON.stringify(questions[idx].correct.sort());
+
+            return (
+              <button
+                key={idx}
+                onClick={() => isAnswered && setCurrentQuestion(idx)}
+                className={`w-10 h-10 rounded-full border text-sm font-medium ${
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : isWrong
+                    ? "bg-red-100 border-red-500"
+                    : isAnswered
+                    ? "bg-green-100 border-green-500"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                }`}
+                disabled={!isAnswered}
+              >
+                {idx + 1}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex-1 space-y-4">
+          {(() => {
+            const q = questions[currentQuestion];
+            const userAnswer = userAnswers[currentQuestion] || [];
+            return (
+              <div className="p-4 border rounded-lg shadow space-y-2 bg-white">
+                <h2 className="font-semibold">
+                  {currentQuestion + 1}. {q["Question"]}
+                </h2>
+                <div className="space-y-2">
+                  {q.options.map((opt, j) => {
+                    const selected = Array.isArray(userAnswer)
+                      ? userAnswer.includes(opt)
+                      : userAnswer === opt;
+                    const isCorrectOpt = q.correct.includes(opt);
+                    const isWrongSelection = submitted && selected && !isCorrectOpt;
+                    const isRightSelection = submitted && selected && isCorrectOpt;
+                    const isUnselectedCorrect = submitted && !selected && isCorrectOpt;
+
+                    const color = isWrongSelection
+                      ? "bg-red-100 border-red-500"
+                      : isRightSelection || isUnselectedCorrect
+                      ? "bg-green-100 border-green-500"
+                      : "";
+
+                    return (
+                      <label
+                        key={j}
+                        className={`flex items-center p-2 border rounded cursor-pointer ${color}`}
+                      >
+                        <input
+                          type={q["Question Type"]}
+                          name={`question-${currentQuestion}`}
+                          value={opt}
+                          checked={selected}
+                          disabled={submitted}
+                          onChange={() =>
+                            handleChange(currentQuestion, opt, q["Question Type"])
+                          }
+                          className="mr-2"
+                        />
+                        {opt}
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {submitted && (
+                  <div className="text-sm text-gray-600">
+                    <p>
+                      <strong>Feedback:</strong> {q["Feedback"]}
+                    </p>
+                    <p>
+                      <strong>Correct Answer:</strong> {q.correct.join(", ")}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <div className="flex justify-between">
+            {currentQuestion > 0 ? (
+              <button
+                onClick={() => setCurrentQuestion(currentQuestion - 1)}
+                className="px-4 py-2 bg-gray-300 rounded"
+              >
+                Previous
+              </button>
+            ) : <div />}
+
+            {currentQuestion < questions.length - 1 ? (
+              <button
+                onClick={() => setCurrentQuestion(currentQuestion + 1)}
+                className="px-4 py-2 bg-blue-600 text-white rounded"
+              >
+                Next
+              </button>
+            ) : !submitted ? (
+              <button
+                onClick={handleSubmit}
+                disabled={Object.keys(userAnswers).length < questions.length}
+                className="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-400"
+              >
+                Submit
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
