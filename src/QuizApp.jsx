@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { Bars3Icon } from '@heroicons/react/24/outline';
 
 const SHUFFLE = (array) => {
   const result = [...array];
@@ -27,6 +28,7 @@ export default function QuizApp() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [quizStarted, setQuizStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90 * 60);
+  const [navVisible, setNavVisible] = useState(true);
 
   const timerRef = useRef();
 
@@ -152,6 +154,14 @@ export default function QuizApp() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">AWS CCP Mock Exam</h1>
+      <button
+        className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+        onClick={() => setNavVisible(!navVisible)}
+      >
+        <Bars3Icon className="w-5 h-5" />
+        {navVisible ? "Hide Navigation" : "Show Navigation"}
+      </button>
+
       {submitted && (
         <div className="text-center space-y-2">
           <p className="text-3xl font-bold">{percent}%</p>
@@ -187,40 +197,70 @@ export default function QuizApp() {
       )}
 
       <div className="flex gap-6">
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2 sticky top-4 h-fit">
-          {questions.map((_, idx) => {
-            const isAnswered = userAnswers[idx] !== undefined;
-            const isActive = idx === currentQuestion;
-            const isWrong = submitted && JSON.stringify((Array.isArray(userAnswers[idx]) ? userAnswers[idx].sort() : [userAnswers[idx]])) !== JSON.stringify(questions[idx].correct.sort());
+        {navVisible && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2 sticky top-4 h-fit">
+            {questions.map((_, idx) => {
+              const isAnswered = userAnswers[idx] !== undefined;
+              const isActive = idx === currentQuestion;
+              const isWrong = submitted && JSON.stringify((Array.isArray(userAnswers[idx]) ? userAnswers[idx].sort() : [userAnswers[idx]])) !== JSON.stringify(questions[idx].correct.sort());
 
-            return (
+              return (
+                <button
+                  key={idx}
+                  onClick={() => isAnswered && setCurrentQuestion(idx)}
+                  className={`w-10 h-10 rounded-full border text-sm font-medium ${
+                    isActive
+                      ? "bg-blue-600 text-white"
+                      : isWrong
+                      ? "bg-red-100 border-red-500"
+                      : isAnswered
+                      ? "bg-green-100 border-green-500"
+                      : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  }`}
+                  disabled={!isAnswered}
+                >
+                  {idx + 1}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className={`flex-1 space-y-4 transition-all duration-300 ${navVisible ? "" : "w-full"}`}>
+          <div className="flex justify-between">
+            {currentQuestion > 0 ? (
               <button
-                key={idx}
-                onClick={() => isAnswered && setCurrentQuestion(idx)}
-                className={`w-10 h-10 rounded-full border text-sm font-medium ${
-                  isActive
-                    ? "bg-blue-600 text-white"
-                    : isWrong
-                    ? "bg-red-100 border-red-500"
-                    : isAnswered
-                    ? "bg-green-100 border-green-500"
-                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                }`}
-                disabled={!isAnswered}
+                onClick={() => setCurrentQuestion(currentQuestion - 1)}
+                className="px-4 py-2 bg-gray-300 rounded"
               >
-                {idx + 1}
+                Previous
               </button>
-            );
-          })}
-        </div>
+            ) : <div />}
 
-        <div className="flex-1 space-y-4">
+            {currentQuestion < questions.length - 1 ? (
+              <button
+                onClick={() => setCurrentQuestion(currentQuestion + 1)}
+                className="px-4 py-2 bg-blue-600 text-white rounded"
+              >
+                Next
+              </button>
+            ) : !submitted ? (
+              <button
+                onClick={handleSubmit}
+                disabled={Object.keys(userAnswers).length < questions.length}
+                className="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-400"
+              >
+                Submit
+              </button>
+            ) : null}
+          </div>
+
           {(() => {
             const q = questions[currentQuestion];
             const userAnswer = userAnswers[currentQuestion] || [];
             return (
               <div className="p-4 border rounded-lg shadow space-y-2 bg-white">
-                <h2 className="font-semibold">
+                <h2 className="font-semibold whitespace-pre-wrap">
                   {currentQuestion + 1}. {q["Question"]}
                 </h2>
                 <div className="space-y-2">
@@ -274,34 +314,6 @@ export default function QuizApp() {
               </div>
             );
           })()}
-
-          <div className="flex justify-between">
-            {currentQuestion > 0 ? (
-              <button
-                onClick={() => setCurrentQuestion(currentQuestion - 1)}
-                className="px-4 py-2 bg-gray-300 rounded"
-              >
-                Previous
-              </button>
-            ) : <div />}
-
-            {currentQuestion < questions.length - 1 ? (
-              <button
-                onClick={() => setCurrentQuestion(currentQuestion + 1)}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
-              >
-                Next
-              </button>
-            ) : !submitted ? (
-              <button
-                onClick={handleSubmit}
-                disabled={Object.keys(userAnswers).length < questions.length}
-                className="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-400"
-              >
-                Submit
-              </button>
-            ) : null}
-          </div>
         </div>
       </div>
     </div>
