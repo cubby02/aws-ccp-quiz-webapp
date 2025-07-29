@@ -152,81 +152,126 @@ export default function QuizApp() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">AWS CCP Mock Exam</h1>
-      <button
-        className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
-        onClick={() => setNavVisible(!navVisible)}
-      >
-        <Bars3Icon className="w-5 h-5" />
-        {navVisible ? "Hide Navigation" : "Show Navigation"}
-      </button>
+  <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <h1 className="text-2xl font-bold">AWS CCP Mock Exam</h1>
 
-      {submitted && (
-        <div className="text-center space-y-2">
-          <p className="text-3xl font-bold">{percent}%</p>
-          <p className="text-lg font-semibold">
-            {percent >= 70 ? "You passed!" : "You failed. Try again."}
-          </p>
-          <p className="text-md">
-            Score: {score} / {questions.length}
-          </p>
-          <div className="text-left mt-4 space-y-1">
-            <h3 className="font-semibold">Domain Scores:</h3>
-            {Object.entries(domainScores).map(([domain, count]) => (
-              <p key={domain}>
-                {domain}: {count} correct
-              </p>
-            ))}
-          </div>
+    <button
+      className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+      onClick={() => setNavVisible(!navVisible)}
+    >
+      <Bars3Icon className="w-5 h-5" />
+      {navVisible ? "Hide Navigation" : "Show Navigation"}
+    </button>
+
+    {submitted && (
+      <div className="text-center space-y-2">
+        <p className="text-3xl font-bold">{percent}%</p>
+        <p className="text-lg font-semibold">
+          {percent >= 70 ? "You passed!" : "You failed. Try again."}
+        </p>
+        <p className="text-md">
+          Score: {score} / {questions.length}
+        </p>
+        <div className="text-left mt-4 space-y-1">
+          <h3 className="font-semibold">Domain Scores:</h3>
+          {Object.entries(domainScores).map(([domain, count]) => (
+            <p key={domain}>
+              {domain}: {count} correct
+            </p>
+          ))}
+        </div>
+        <button
+          onClick={() => {
+            setSubmitted(false);
+            setUserAnswers({});
+            setScore(0);
+            setDomainScores({});
+            setQuizStarted(false);
+            setCurrentQuestion(0);
+            setTimeLeft(90 * 60);
+          }}
+          className="mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+        >
+          Take Again
+        </button>
+      </div>
+    )}
+
+    {!submitted && (
+      <div className="space-y-2">
+        <p className="text-lg font-semibold text-center">
+          Time Left: {minutes}:{seconds.toString().padStart(2, "0")}
+        </p>
+        <div className="w-full h-4 bg-gray-200 rounded overflow-hidden">
+          <div
+            className="h-4 bg-blue-600 transition-all duration-1000"
+            style={{ width: `${(timeLeft / (90 * 60)) * 100}%` }}
+          ></div>
+        </div>
+      </div>
+    )}
+
+    <div className="flex gap-6">
+      {navVisible && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2 sticky top-4 h-fit">
+          {questions.map((_, idx) => {
+            const isAnswered = userAnswers[idx] !== undefined;
+            const isActive = idx === currentQuestion;
+            const isWrong = submitted && JSON.stringify((Array.isArray(userAnswers[idx]) ? userAnswers[idx].sort() : [userAnswers[idx]])) !== JSON.stringify(questions[idx].correct.sort());
+
+            return (
+              <button
+                key={idx}
+                onClick={() => {
+                  if (submitted) {
+                    document.getElementById(`question-${idx}`)?.scrollIntoView({ behavior: "smooth" });
+                  } else if (isAnswered) {
+                    setCurrentQuestion(idx);
+                  }
+                }}
+                className={`w-10 h-10 rounded-full border text-sm font-medium ${
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : isWrong
+                    ? "bg-red-100 border-red-500"
+                    : isAnswered
+                    ? "bg-green-100 border-green-500"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                }`}
+                disabled={!isAnswered && !submitted}
+              >
+                {idx + 1}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {!submitted && (
-        <div className="space-y-2">
-          <p className="text-lg font-semibold text-center">
-            Time Left: {minutes}:{seconds.toString().padStart(2, "0")}
-          </p>
-          <div className="w-full h-4 bg-gray-200 rounded overflow-hidden">
-            <div
-              className="h-4 bg-blue-600 transition-all duration-1000"
-              style={{ width: `${(timeLeft / (90 * 60)) * 100}%` }}
-            ></div>
-          </div>
-        </div>
-      )}
+      <div className={`flex-1 space-y-4 ${navVisible ? "" : "w-full"}`}>
+        {submitted
+          ? questions.map((q, idx) => (
+              <QuestionCard
+                key={idx}
+                id={`question-${idx}`}
+                question={q}
+                index={idx}
+                userAnswer={userAnswers[idx] || []}
+                submitted={true}
+              />
+            ))
+          : (
+            <QuestionCard
+              id={`question-${currentQuestion}`}
+              question={questions[currentQuestion]}
+              index={currentQuestion}
+              userAnswer={userAnswers[currentQuestion] || []}
+              submitted={false}
+              handleChange={handleChange}
+            />
+          )
+        }
 
-      <div className="flex gap-6">
-        {navVisible && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2 sticky top-4 h-fit">
-            {questions.map((_, idx) => {
-              const isAnswered = userAnswers[idx] !== undefined;
-              const isActive = idx === currentQuestion;
-              const isWrong = submitted && JSON.stringify((Array.isArray(userAnswers[idx]) ? userAnswers[idx].sort() : [userAnswers[idx]])) !== JSON.stringify(questions[idx].correct.sort());
-
-              return (
-                <button
-                  key={idx}
-                  onClick={() => isAnswered && setCurrentQuestion(idx)}
-                  className={`w-10 h-10 rounded-full border text-sm font-medium ${
-                    isActive
-                      ? "bg-blue-600 text-white"
-                      : isWrong
-                      ? "bg-red-100 border-red-500"
-                      : isAnswered
-                      ? "bg-green-100 border-green-500"
-                      : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  }`}
-                  disabled={!isAnswered}
-                >
-                  {idx + 1}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div className={`flex-1 space-y-4 transition-all duration-300 ${navVisible ? "" : "w-full"}`}>
+        {!submitted && (
           <div className="flex justify-between">
             {currentQuestion > 0 ? (
               <button
@@ -244,7 +289,7 @@ export default function QuizApp() {
               >
                 Next
               </button>
-            ) : !submitted ? (
+            ) : (
               <button
                 onClick={handleSubmit}
                 disabled={Object.keys(userAnswers).length < questions.length}
@@ -252,70 +297,72 @@ export default function QuizApp() {
               >
                 Submit
               </button>
-            ) : null}
+            )}
           </div>
-
-          {(() => {
-            const q = questions[currentQuestion];
-            const userAnswer = userAnswers[currentQuestion] || [];
-            return (
-              <div className="p-4 border rounded-lg shadow space-y-2 bg-white">
-                <h2 className="font-semibold whitespace-pre-wrap">
-                  {currentQuestion + 1}. {q["Question"]}
-                </h2>
-                <div className="space-y-2">
-                  {q.options.map((opt, j) => {
-                    const selected = Array.isArray(userAnswer)
-                      ? userAnswer.includes(opt)
-                      : userAnswer === opt;
-                    const isCorrectOpt = q.correct.includes(opt);
-                    const isWrongSelection = submitted && selected && !isCorrectOpt;
-                    const isRightSelection = submitted && selected && isCorrectOpt;
-                    const isUnselectedCorrect = submitted && !selected && isCorrectOpt;
-
-                    const color = isWrongSelection
-                      ? "bg-red-100 border-red-500"
-                      : isRightSelection || isUnselectedCorrect
-                      ? "bg-green-100 border-green-500"
-                      : "";
-
-                    return (
-                      <label
-                        key={j}
-                        className={`flex items-center p-2 border rounded cursor-pointer ${color}`}
-                      >
-                        <input
-                          type={q["Question Type"]}
-                          name={`question-${currentQuestion}`}
-                          value={opt}
-                          checked={selected}
-                          disabled={submitted}
-                          onChange={() =>
-                            handleChange(currentQuestion, opt, q["Question Type"])
-                          }
-                          className="mr-2"
-                        />
-                        {opt}
-                      </label>
-                    );
-                  })}
-                </div>
-
-                {submitted && (
-                  <div className="text-sm text-gray-600">
-                    <p>
-                      <strong>Feedback:</strong> {q["Feedback"]}
-                    </p>
-                    <p>
-                      <strong>Correct Answer:</strong> {q.correct.join(", ")}
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </div>
+        )}
       </div>
+    </div>
+  </div>
+);
+
+}
+
+function QuestionCard({ id, question, index, userAnswer, submitted, handleChange }) {
+  const q = question;
+
+  return (
+    <div id={id} className="p-4 border rounded-lg shadow space-y-2 bg-white">
+      <h2 className="font-semibold whitespace-pre-wrap">
+        {index + 1}. {q["Question"]}
+      </h2>
+      <div className="space-y-2">
+        {q.options.map((opt, j) => {
+          const selected = Array.isArray(userAnswer)
+            ? userAnswer.includes(opt)
+            : userAnswer === opt;
+          const isCorrectOpt = q.correct.includes(opt);
+          const isWrongSelection = submitted && selected && !isCorrectOpt;
+          const isRightSelection = submitted && selected && isCorrectOpt;
+          const isUnselectedCorrect = submitted && !selected && isCorrectOpt;
+
+          const color = isWrongSelection
+            ? "bg-red-100 border-red-500"
+            : isRightSelection || isUnselectedCorrect
+            ? "bg-green-100 border-green-500"
+            : "";
+
+          return (
+            <label
+              key={j}
+              className={`flex items-center p-2 border rounded cursor-pointer ${color}`}
+            >
+              <input
+                type={q["Question Type"]}
+                name={`question-${index}`}
+                value={opt}
+                checked={selected}
+                disabled={submitted}
+                onChange={() =>
+                  handleChange && handleChange(index, opt, q["Question Type"])
+                }
+                className="mr-2"
+              />
+              {opt}
+            </label>
+          );
+        })}
+      </div>
+
+      {submitted && (
+        <div className="text-sm text-gray-600">
+          <p>
+            <strong>Feedback:</strong> {q["Feedback"]}
+          </p>
+          <p>
+            <strong>Correct Answer:</strong> {q.correct.join(", ")}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
