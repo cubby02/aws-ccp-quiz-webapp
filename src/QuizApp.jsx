@@ -32,54 +32,16 @@ export default function QuizApp() {
 
   const timerRef = useRef();
 
-  useEffect(() => {
-    fetch(
-      "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        const domains = Object.keys(DOMAIN_PERCENTAGES);
-        const grouped = {};
-        domains.forEach((d) => (grouped[d] = []));
+  const isTestingCheckboxOnly = false;
 
-        data.forEach((q) => {
-          const domain = q["Domain"].trim();
-          if (grouped[domain]) grouped[domain].push(q);
-        });
+useEffect(() => {
+  if (isTestingCheckboxOnly) {
+    fetchCheckboxQuestions(setQuestions);
+  } else {
+    fetchAllQuestions(setQuestions);
+  }
+}, []);
 
-        const selected = domains.flatMap((domain) => {
-          const total = Math.round(DOMAIN_PERCENTAGES[domain] * 65);
-          return SHUFFLE(grouped[domain]).slice(0, total);
-        });
-
-        const shuffled = SHUFFLE(selected).map((q) => {
-          const isCheckbox = q["Question Type"].toLowerCase() === "checkbox";
-          const correct = isCheckbox
-            ? q["Correct Answers"]
-                .split(/\s*;\s*/g)
-                .map((c) => c.trim())
-                .filter((c) => c)
-            : [q["Correct Answers"].trim()];
-
-          const options = SHUFFLE([
-            q["Option 1"],
-            q["Option 2"],
-            q["Option 3"],
-            q["Option 4"],
-            ...correct.filter((c) => ![
-              q["Option 1"],
-              q["Option 2"],
-              q["Option 3"],
-              q["Option 4"],
-            ].includes(c)),
-          ]);
-
-          return { ...q, correct, options };
-        });
-
-        setQuestions(shuffled);
-      });
-  }, []);
 
   useEffect(() => {
     if (quizStarted && !submitted) {
@@ -354,7 +316,7 @@ function QuestionCard({ id, question, index, userAnswer, submitted, handleChange
       </div>
 
       {submitted && (
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-gray-600 whitespace-pre-wrap">
           <p>
             <strong>Feedback:</strong> {q["Feedback"]}
           </p>
@@ -366,3 +328,143 @@ function QuestionCard({ id, question, index, userAnswer, submitted, handleChange
     </div>
   );
 }
+
+const fetchCheckboxQuestions = async (setQuestions) => {
+  const res = await fetch(
+    "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
+  );
+  const data = await res.json();
+
+  const checkboxQuestions = data.filter(
+    (q) => q["Question Type"]?.toLowerCase() === "checkbox"
+  );
+
+  const selected = SHUFFLE(checkboxQuestions).slice(0, 33); // limit to 10 for testing
+
+  const processed = selected.map((q) => {
+    const correct = q["Correct Answers"]
+      .split(/\s*;\s*/g)
+      .map((c) => c.trim())
+      .filter((c) => c);
+
+    const existingOptions = [
+      q["Option 1"],
+      q["Option 2"],
+      q["Option 3"],
+      q["Option 4"],
+    ];
+
+    const normalizeText = (text) =>
+      text
+        .replace(/\s+/g, " ")
+        .replace(/\u00A0/g, " ")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim()
+        .toLowerCase();
+
+    const normalizedExisting = existingOptions.map(normalizeText);
+
+    const additionalCorrect = correct.filter(
+      (c) => !normalizedExisting.includes(normalizeText(c))
+    );
+
+    const allOptions = [...existingOptions, ...additionalCorrect];
+
+    const uniqueOptions = Array.from(
+      new Map(allOptions.map((opt) => [normalizeText(opt), opt])).values()
+    );
+
+    const options = SHUFFLE(uniqueOptions);
+
+    return { ...q, correct, options };
+  });
+
+  console.log("Processed questions:", processed);
+  processed.forEach((q, i) => {
+    if (q?.options?.length > 4) {
+      console.warn(`⚠️ Question at index ${i} has more than 4 options (${q.options.length}):`, {
+        question: q["Question"],
+        options: q.options,
+      });
+    }
+  });
+
+  setQuestions(processed);
+};
+
+const fetchAllQuestions = async (setQuestions) => {
+  const res = await fetch(
+    "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
+  );
+  const data = await res.json();
+
+  const domains = Object.keys(DOMAIN_PERCENTAGES);
+  const grouped = {};
+  domains.forEach((d) => (grouped[d] = []));
+
+  data.forEach((q) => {
+    const domain = q["Domain"].trim();
+    if (grouped[domain]) grouped[domain].push(q);
+  });
+
+  const selected = domains.flatMap((domain) => {
+    const total = Math.round(DOMAIN_PERCENTAGES[domain] * 65); // adjust multiplier if needed
+    return SHUFFLE(grouped[domain]).slice(0, total);
+  });
+
+  const processed = SHUFFLE(selected).map((q) => {
+    const isCheckbox = q["Question Type"].toLowerCase() === "checkbox";
+
+    const correct = isCheckbox
+      ? q["Correct Answers"]
+          .split(/\s*;\s*/g)
+          .map((c) => c.trim())
+          .filter((c) => c)
+      : [q["Correct Answers"].trim()];
+
+    const existingOptions = [
+      q["Option 1"],
+      q["Option 2"],
+      q["Option 3"],
+      q["Option 4"],
+    ];
+
+    const normalizeText = (text) =>
+      text
+        .replace(/\s+/g, " ")
+        .replace(/\u00A0/g, " ")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim()
+        .toLowerCase();
+
+    const normalizedExisting = existingOptions.map(normalizeText);
+
+    const additionalCorrect = correct.filter(
+      (c) => !normalizedExisting.includes(normalizeText(c))
+    );
+
+    const allOptions = [...existingOptions, ...additionalCorrect];
+
+    const uniqueOptions = Array.from(
+      new Map(allOptions.map((opt) => [normalizeText(opt), opt])).values()
+    );
+
+    const options = SHUFFLE(uniqueOptions);
+
+    return { ...q, correct, options };
+  });
+
+  console.log("Processed questions:", processed);
+  processed.forEach((q, i) => {
+    if (q?.options?.length > 4) {
+      console.warn(`⚠️ Question at index ${i} has more than 4 options (${q.options.length}):`, {
+        question: q["Question"],
+        options: q.options,
+      });
+    }
+  });
+
+  setQuestions(processed);
+};
+
+
