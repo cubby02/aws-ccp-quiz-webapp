@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Bars3Icon } from "@heroicons/react/24/outline";
+import { Bars3Icon, FlagIcon } from "@heroicons/react/24/outline";
 
 const SHUFFLE = (array) => {
   const result = [...array];
@@ -33,18 +33,31 @@ export default function QuizApp() {
   const [navVisible, setNavVisible] = useState(true);
   const [flagged, setFlagged] = useState({});
   const [loading, setLoading] = useState(false);
+  const [quizSessionId, setQuizSessionId] = useState(0);
 
   const timerRef = useRef();
 
   const isTestingCheckboxOnly = false;
 
   useEffect(() => {
-    if (isTestingCheckboxOnly) {
-      fetchCheckboxQuestions(setQuestions);
+    const savedResults = localStorage.getItem("quizResults");
+    if (savedResults) {
+      const parsed = JSON.parse(savedResults);
+      setQuestions(parsed.questions || []);
+      setUserAnswers(parsed.userAnswers || {});
+      setScore(parsed.score || 0);
+      setDomainScores(parsed.domainScores || {});
+      setSubmitted(true);          // ← 🟢 make sure it's review mode
+      setQuizStarted(true);        // ← 🟢 skip "Start Quiz" button
     } else {
-      fetchAllQuestions(setQuestions);
+      // Load new quiz normally
+      if (isTestingCheckboxOnly) {
+        fetchCheckboxQuestions(setQuestions);
+      } else {
+        fetchAllQuestions(setQuestions);
+      }
     }
-  }, []);
+  }, [quizSessionId, quizStarted]);
 
   useEffect(() => {
     if (quizStarted && !submitted) {
@@ -97,6 +110,15 @@ export default function QuizApp() {
     setDomainScores(domainScores);
     setSubmitted(true);
     clearInterval(timerRef.current);
+
+    localStorage.setItem("quizResults", JSON.stringify({
+      submitted: true,
+      questions,
+      userAnswers,
+      score,
+      domainScores,
+    }));
+
   };
 
   const percent = ((score / questions.length) * 100).toFixed(2);
@@ -106,7 +128,7 @@ export default function QuizApp() {
   if (!quizStarted) {
     if (loading) {
       return (
-        <div className="p-6 max-w-3xl mx-auto space-y-4 text-center">
+        <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4 text-center">
           <h1 className="text-3xl font-bold">AWS CCP Mock Exam</h1>
           <div className="text-lg animate-pulse">Loading questions...</div>
         </div>
@@ -114,15 +136,18 @@ export default function QuizApp() {
     }
 
     return (
-      <div className="p-6 max-w-3xl mx-auto space-y-4 text-center">
+      <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4 text-center">
         <h1 className="text-3xl font-bold">AWS CCP Mock Exam</h1>
         <button
-          onClick={() => {
+          onClick={async () => {
             setLoading(true);
-            setTimeout(() => {
-              setQuizStarted(true);
-              setLoading(false);
-            }, 500); // 500ms delay, adjust as needed
+            const fetch = isTestingCheckboxOnly
+              ? fetchCheckboxQuestions
+              : fetchAllQuestions;
+
+            await fetch(setQuestions); // fetch and set questions
+            setQuizStarted(true); // only start once ready
+            setLoading(false);
           }}
           className="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700"
         >
@@ -133,7 +158,7 @@ export default function QuizApp() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">AWS CCP Mock Exam</h1>
 
       <button
@@ -176,11 +201,16 @@ export default function QuizApp() {
               setUserAnswers({});
               setScore(0);
               setDomainScores({});
-              setQuizStarted(false);
               setCurrentQuestion(0);
               setTimeLeft(90 * 60);
               setFlagged({});
+              setQuizStarted(false); // Show Start Quiz screen
+
+              localStorage.removeItem("quizResults");
+
+              setQuizSessionId((prev) => prev + 1); // Prepare for fresh fetch next time Start is clicked
             }}
+
             className="mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
           >
             Take Again
@@ -202,9 +232,9 @@ export default function QuizApp() {
         </div>
       )}
 
-      <div className="flex gap-6">
+      <div className="flex flex-col-reverse lg:flex-row gap-6">
         {navVisible && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2 sticky top-4 h-fit">
+          <div className="grid grid-cols-10 gap-2 sticky top-4 h-fit">
             {questions.map((_, idx) => {
               const isAnswered = userAnswers[idx] !== undefined;
               const isActive = idx === currentQuestion;
@@ -229,7 +259,7 @@ export default function QuizApp() {
                       setCurrentQuestion(idx);
                     }
                   }}
-                  className={`w-10 h-10 rounded-full border text-sm font-medium ${
+                  className={`w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-full border text-[10px] sm:text-xs md:text-sm font-medium ${
                     isActive
                       ? "bg-blue-600 text-white"
                       : isFlagged
@@ -251,19 +281,18 @@ export default function QuizApp() {
 
         <div className={`flex-1 space-y-4 ${navVisible ? "" : "w-full"}`}>
           {!submitted && (
-            <div className="flex justify-between">
-              {currentQuestion > 0 ? (
-                <button
-                  onClick={() => setCurrentQuestion(currentQuestion - 1)}
-                  className="px-4 py-2 bg-gray-300 rounded"
-                >
-                  Previous
-                </button>
-              ) : (
-                <div />
-              )}
+              <div className="flex flex-wrap justify-between gap-2">
+                {currentQuestion > 0 ? (
+                  <button
+                    onClick={() => setCurrentQuestion(currentQuestion - 1)}
+                    className="px-3 py-1 sm:px-4 sm:py-2 bg-gray-300 text-sm sm:text-base rounded"
+                  >
+                    Previous
+                  </button>
+                ) : (
+                  <div />
+                )}
 
-              {!submitted && (
                 <div className="flex justify-end">
                   <button
                     onClick={() =>
@@ -272,33 +301,36 @@ export default function QuizApp() {
                         [currentQuestion]: !prev[currentQuestion],
                       }))
                     }
-                    className={`px-3 py-1 text-sm rounded ${
+                    className={`flex items-center justify-center gap-x-1 sm:gap-x-2 px-2 sm:px-3 py-1 text-sm rounded ${
                       flagged[currentQuestion] ? "bg-yellow-300" : "bg-gray-200"
                     } hover:bg-yellow-400`}
                   >
-                    {flagged[currentQuestion] ? "Unflag" : "Flag for Review"}
+                    <FlagIcon className="w-5 h-5" />
+                    <span className="hidden sm:inline">
+                      {flagged[currentQuestion] ? "Unflag" : "Flag for Review"}
+                    </span>
                   </button>
                 </div>
-              )}
 
-              {currentQuestion < questions.length - 1 ? (
-                <button
-                  onClick={() => setCurrentQuestion(currentQuestion + 1)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded"
-                >
-                  Next
-                </button>
-              ) : (
-                <button
-                  onClick={handleSubmit}
-                  disabled={Object.keys(userAnswers).length < questions.length}
-                  className="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-400"
-                >
-                  Submit
-                </button>
-              )}
-            </div>
-          )}
+                {currentQuestion < questions.length - 1 ? (
+                  <button
+                    onClick={() => setCurrentQuestion(currentQuestion + 1)}
+                    className="px-3 py-1 sm:px-4 sm:py-2 bg-blue-600 text-white text-sm sm:text-base rounded"
+                  >
+                    Next
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={Object.keys(userAnswers).length < questions.length}
+                    className="px-3 py-1 sm:px-4 sm:py-2 bg-green-600 text-white text-sm sm:text-base rounded disabled:bg-gray-400"
+                  >
+                    Submit
+                  </button>
+                )}
+              </div>
+            )}
+
 
           {submitted ? (
             questions.map((q, idx) => (
@@ -345,7 +377,7 @@ function QuestionCard({
   const q = question;
 
   return (
-    <div id={id} className="p-4 border rounded-lg shadow space-y-2 bg-white">
+    <div id={id} className="p-4 sm:p-6 border rounded-lg shadow space-y-2 bg-white">
       <h2 className="font-semibold whitespace-pre-wrap">
         {index + 1}. {q["Question"]}
       </h2>
@@ -364,11 +396,13 @@ function QuestionCard({
             : isRightSelection || isUnselectedCorrect
               ? "bg-green-100 border-green-500"
               : "";
+          
+          const selectedStyle = !submitted && selected ? "bg-blue-100 border-blue-500" : "";
 
           return (
             <label
               key={j}
-              className={`flex items-center p-2 border rounded cursor-pointer ${color}`}
+              className={`flex items-start gap-2 p-2 border rounded cursor-pointer ${color} ${selectedStyle}`}
             >
               <input
                 type={q["Question Type"]}
@@ -379,9 +413,10 @@ function QuestionCard({
                 onChange={() =>
                   handleChange && handleChange(index, opt, q["Question Type"])
                 }
-                className="mr-2"
+                className="mt-1"
               />
-              {opt}
+              
+              <span className="break-words">{opt}</span>
             </label>
           );
         })}
