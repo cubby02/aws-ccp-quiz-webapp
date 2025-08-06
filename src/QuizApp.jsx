@@ -40,7 +40,7 @@ export default function QuizApp() {
   const isTestingCheckboxOnly = false;
 
   useEffect(() => {
-    const savedResults = localStorage.getItem("quizResults");
+    const savedResults = sessionStorage.getItem("quizResults");
     if (savedResults) {
       const parsed = JSON.parse(savedResults);
       setQuestions(parsed.questions || []);
@@ -111,7 +111,7 @@ export default function QuizApp() {
     setSubmitted(true);
     clearInterval(timerRef.current);
 
-    localStorage.setItem("quizResults", JSON.stringify({
+    sessionStorage.setItem("quizResults", JSON.stringify({
       submitted: true,
       questions,
       userAnswers,
@@ -206,7 +206,7 @@ export default function QuizApp() {
               setFlagged({});
               setQuizStarted(false); // Show Start Quiz screen
 
-              localStorage.removeItem("quizResults");
+              sessionStorage.removeItem("quizResults");
 
               setQuizSessionId((prev) => prev + 1); // Prepare for fresh fetch next time Start is clicked
             }}
@@ -519,7 +519,7 @@ const fetchAllQuestions = async (setQuestions) => {
 
   
   const selected = domains.flatMap((domain) => {
-    const total = Math.round(DOMAIN_PERCENTAGES[domain] * 3); // adjust multiplier if needed
+    const total = Math.round(DOMAIN_PERCENTAGES[domain] * 65); // adjust multiplier if needed
     domainQuestionTotals[domain] = total; // track how many were selected
     return SHUFFLE(grouped[domain]).slice(0, total);
   });
