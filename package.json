@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "predeploy": "npm run build && git push origin --delete gh-pages && git branch -D gh-pages",
+    "predeploy": "npm run build && git push origin --delete gh-pages || true && git branch -D gh-pages || echo 'No local gh-pages branch to delete'",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
