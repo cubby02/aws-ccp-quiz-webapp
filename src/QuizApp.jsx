@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Bars3Icon } from '@heroicons/react/24/outline';
+import { Bars3Icon, FlagIcon } from "@heroicons/react/24/outline";
 
 const SHUFFLE = (array) => {
   const result = [...array];
@@ -14,10 +14,12 @@ const SHUFFLE = (array) => {
 
 const DOMAIN_PERCENTAGES = {
   "Cloud Concepts": 0.24,
-  "Security and Compliance": 0.30,
+  "Security and Compliance": 0.3,
   "Cloud Technology": 0.34,
   "Billing, Pricing and Support": 0.12,
 };
+
+const domainQuestionTotals = {};
 
 export default function QuizApp() {
   const [questions, setQuestions] = useState([]);
@@ -29,57 +31,33 @@ export default function QuizApp() {
   const [quizStarted, setQuizStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90 * 60);
   const [navVisible, setNavVisible] = useState(true);
+  const [flagged, setFlagged] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [quizSessionId, setQuizSessionId] = useState(0);
 
   const timerRef = useRef();
 
+  const isTestingCheckboxOnly = false;
+
   useEffect(() => {
-    fetch(
-      "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        const domains = Object.keys(DOMAIN_PERCENTAGES);
-        const grouped = {};
-        domains.forEach((d) => (grouped[d] = []));
-
-        data.forEach((q) => {
-          const domain = q["Domain"].trim();
-          if (grouped[domain]) grouped[domain].push(q);
-        });
-
-        const selected = domains.flatMap((domain) => {
-          const total = Math.round(DOMAIN_PERCENTAGES[domain] * 65);
-          return SHUFFLE(grouped[domain]).slice(0, total);
-        });
-
-        const shuffled = SHUFFLE(selected).map((q) => {
-          const isCheckbox = q["Question Type"].toLowerCase() === "checkbox";
-          const correct = isCheckbox
-            ? q["Correct Answers"]
-                .split(/\s*;\s*/g)
-                .map((c) => c.trim())
-                .filter((c) => c)
-            : [q["Correct Answers"].trim()];
-
-          const options = SHUFFLE([
-            q["Option 1"],
-            q["Option 2"],
-            q["Option 3"],
-            q["Option 4"],
-            ...correct.filter((c) => ![
-              q["Option 1"],
-              q["Option 2"],
-              q["Option 3"],
-              q["Option 4"],
-            ].includes(c)),
-          ]);
-
-          return { ...q, correct, options };
-        });
-
-        setQuestions(shuffled);
-      });
-  }, []);
+    const savedResults = localStorage.getItem("quizResults");
+    if (savedResults) {
+      const parsed = JSON.parse(savedResults);
+      setQuestions(parsed.questions || []);
+      setUserAnswers(parsed.userAnswers || {});
+      setScore(parsed.score || 0);
+      setDomainScores(parsed.domainScores || {});
+      setSubmitted(true);          // ← 🟢 make sure it's review mode
+      setQuizStarted(true);        // ← 🟢 skip "Start Quiz" button
+    } else {
+      // Load new quiz normally
+      if (isTestingCheckboxOnly) {
+        fetchCheckboxQuestions(setQuestions);
+      } else {
+        fetchAllQuestions(setQuestions);
+      }
+    }
+  }, [quizSessionId, quizStarted]);
 
   useEffect(() => {
     if (quizStarted && !submitted) {
@@ -117,7 +95,8 @@ export default function QuizApp() {
 
     questions.forEach((q, i) => {
       const correct = q.correct.sort();
-      const answer = userAnswers[i] || (q["Question Type"] === "checkbox" ? [] : "");
+      const answer =
+        userAnswers[i] || (q["Question Type"] === "checkbox" ? [] : "");
       const userAnswer = Array.isArray(answer) ? answer.sort() : [answer];
       const isCorrect = JSON.stringify(correct) === JSON.stringify(userAnswer);
 
@@ -131,6 +110,15 @@ export default function QuizApp() {
     setDomainScores(domainScores);
     setSubmitted(true);
     clearInterval(timerRef.current);
+
+    localStorage.setItem("quizResults", JSON.stringify({
+      submitted: true,
+      questions,
+      userAnswers,
+      score,
+      domainScores,
+    }));
+
   };
 
   const percent = ((score / questions.length) * 100).toFixed(2);
@@ -138,11 +126,29 @@ export default function QuizApp() {
   const seconds = timeLeft % 60;
 
   if (!quizStarted) {
+    if (loading) {
+      return (
+        <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4 text-center">
+          <h1 className="text-3xl font-bold">AWS CCP Mock Exam</h1>
+          <div className="text-lg animate-pulse">Loading questions...</div>
+        </div>
+      );
+    }
+
     return (
-      <div className="p-6 max-w-3xl mx-auto space-y-4 text-center">
+      <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4 text-center">
         <h1 className="text-3xl font-bold">AWS CCP Mock Exam</h1>
         <button
-          onClick={() => setQuizStarted(true)}
+          onClick={async () => {
+            setLoading(true);
+            const fetch = isTestingCheckboxOnly
+              ? fetchCheckboxQuestions
+              : fetchAllQuestions;
+
+            await fetch(setQuestions); // fetch and set questions
+            setQuizStarted(true); // only start once ready
+            setLoading(false);
+          }}
           className="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700"
         >
           Start Quiz
@@ -152,104 +158,182 @@ export default function QuizApp() {
   }
 
   return (
-  <div className="p-6 max-w-6xl mx-auto space-y-6">
-    <h1 className="text-2xl font-bold">AWS CCP Mock Exam</h1>
+    <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">AWS CCP Mock Exam</h1>
 
-    <button
-      className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
-      onClick={() => setNavVisible(!navVisible)}
-    >
-      <Bars3Icon className="w-5 h-5" />
-      {navVisible ? "Hide Navigation" : "Show Navigation"}
-    </button>
+      <button
+        className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+        onClick={() => setNavVisible(!navVisible)}
+      >
+        <Bars3Icon className="w-5 h-5" />
+        {navVisible ? "Hide Navigation" : "Show Navigation"}
+      </button>
 
-    {submitted && (
-      <div className="text-center space-y-2">
-        <p className="text-3xl font-bold">{percent}%</p>
-        <p className="text-lg font-semibold">
-          {percent >= 70 ? "You passed!" : "You failed. Try again."}
-        </p>
-        <p className="text-md">
-          Score: {score} / {questions.length}
-        </p>
-        <div className="text-left mt-4 space-y-1">
-          <h3 className="font-semibold">Domain Scores:</h3>
-          {Object.entries(domainScores).map(([domain, count]) => (
-            <p key={domain}>
-              {domain}: {count} correct
-            </p>
-          ))}
-        </div>
-        <button
-          onClick={() => {
-            setSubmitted(false);
-            setUserAnswers({});
-            setScore(0);
-            setDomainScores({});
-            setQuizStarted(false);
-            setCurrentQuestion(0);
-            setTimeLeft(90 * 60);
-          }}
-          className="mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-        >
-          Take Again
-        </button>
-      </div>
-    )}
+      {submitted && (
+        <div className="text-center space-y-2">
+          <p className="text-3xl font-bold">{percent}%</p>
+          <p className="text-lg font-semibold">
+            {percent >= 70 ? "You passed!" : "You failed. Try again."}
+          </p>
+          <p className="text-md">
+            Score: {score} / {questions.length}
+          </p>
+          
+          <div className="text-left mt-4 space-y-1">
+            <h3 className="font-semibold">Domain Scores:</h3>
+            {Object.entries(domainScores).map(([domain, correct]) => {
+              const total = domainQuestionTotals[domain] || 0;
+              const percentage = total
+                ? ((correct / total) * 100).toFixed(1)
+                : "0.0";
 
-    {!submitted && (
-      <div className="space-y-2">
-        <p className="text-lg font-semibold text-center">
-          Time Left: {minutes}:{seconds.toString().padStart(2, "0")}
-        </p>
-        <div className="w-full h-4 bg-gray-200 rounded overflow-hidden">
-          <div
-            className="h-4 bg-blue-600 transition-all duration-1000"
-            style={{ width: `${(timeLeft / (90 * 60)) * 100}%` }}
-          ></div>
-        </div>
-      </div>
-    )}
+              return (
+                <p key={domain}>
+                  {domain}: {correct} / {total} correct ({percentage}%)
+                </p>
+              );
+            })}
+          </div>
 
-    <div className="flex gap-6">
-      {navVisible && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-2 sticky top-4 h-fit">
-          {questions.map((_, idx) => {
-            const isAnswered = userAnswers[idx] !== undefined;
-            const isActive = idx === currentQuestion;
-            const isWrong = submitted && JSON.stringify((Array.isArray(userAnswers[idx]) ? userAnswers[idx].sort() : [userAnswers[idx]])) !== JSON.stringify(questions[idx].correct.sort());
+          <button
+            onClick={() => {
+              setSubmitted(false);
+              setUserAnswers({});
+              setScore(0);
+              setDomainScores({});
+              setCurrentQuestion(0);
+              setTimeLeft(90 * 60);
+              setFlagged({});
+              setQuizStarted(false); // Show Start Quiz screen
 
-            return (
-              <button
-                key={idx}
-                onClick={() => {
-                  if (submitted) {
-                    document.getElementById(`question-${idx}`)?.scrollIntoView({ behavior: "smooth" });
-                  } else if (isAnswered) {
-                    setCurrentQuestion(idx);
-                  }
-                }}
-                className={`w-10 h-10 rounded-full border text-sm font-medium ${
-                  isActive
-                    ? "bg-blue-600 text-white"
-                    : isWrong
-                    ? "bg-red-100 border-red-500"
-                    : isAnswered
-                    ? "bg-green-100 border-green-500"
-                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                }`}
-                disabled={!isAnswered && !submitted}
-              >
-                {idx + 1}
-              </button>
-            );
-          })}
+              localStorage.removeItem("quizResults");
+
+              setQuizSessionId((prev) => prev + 1); // Prepare for fresh fetch next time Start is clicked
+            }}
+
+            className="mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+          >
+            Take Again
+          </button>
         </div>
       )}
 
-      <div className={`flex-1 space-y-4 ${navVisible ? "" : "w-full"}`}>
-        {submitted
-          ? questions.map((q, idx) => (
+      {!submitted && (
+        <div className="space-y-2">
+          <p className="text-lg font-semibold text-center">
+            Time Left: {minutes}:{seconds.toString().padStart(2, "0")}
+          </p>
+          <div className="w-full h-4 bg-gray-200 rounded overflow-hidden">
+            <div
+              className="h-4 bg-blue-600 transition-all duration-1000"
+              style={{ width: `${(timeLeft / (90 * 60)) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col-reverse lg:flex-row gap-6">
+        {navVisible && (
+          <div className="grid grid-cols-10 gap-2 sticky top-4 h-fit">
+            {questions.map((_, idx) => {
+              const isAnswered = userAnswers[idx] !== undefined;
+              const isActive = idx === currentQuestion;
+              const isWrong =
+                submitted &&
+                JSON.stringify(
+                  Array.isArray(userAnswers[idx])
+                    ? userAnswers[idx].sort()
+                    : [userAnswers[idx]]
+                ) !== JSON.stringify(questions[idx].correct.sort());
+              const isFlagged = flagged[idx];
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    if (submitted) {
+                      document
+                        .getElementById(`question-${idx}`)
+                        ?.scrollIntoView({ behavior: "smooth" });
+                    } else if (isAnswered || isFlagged) {
+                      setCurrentQuestion(idx);
+                    }
+                  }}
+                  className={`w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-full border text-[10px] sm:text-xs md:text-sm font-medium ${
+                    isActive
+                      ? "bg-blue-600 text-white"
+                      : isFlagged
+                        ? "bg-yellow-200 border-yellow-400"
+                        : isWrong
+                          ? "bg-red-100 border-red-500"
+                          : isAnswered
+                            ? "bg-green-100 border-green-500"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  }`}
+                  disabled={!isAnswered && !submitted && !isFlagged}
+                >
+                  {idx + 1}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className={`flex-1 space-y-4 ${navVisible ? "" : "w-full"}`}>
+          {!submitted && (
+              <div className="flex flex-wrap justify-between gap-2">
+                {currentQuestion > 0 ? (
+                  <button
+                    onClick={() => setCurrentQuestion(currentQuestion - 1)}
+                    className="px-3 py-1 sm:px-4 sm:py-2 bg-gray-300 text-sm sm:text-base rounded"
+                  >
+                    Previous
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={() =>
+                      setFlagged((prev) => ({
+                        ...prev,
+                        [currentQuestion]: !prev[currentQuestion],
+                      }))
+                    }
+                    className={`flex items-center justify-center gap-x-1 sm:gap-x-2 px-2 sm:px-3 py-1 text-sm rounded ${
+                      flagged[currentQuestion] ? "bg-yellow-300" : "bg-gray-200"
+                    } hover:bg-yellow-400`}
+                  >
+                    <FlagIcon className="w-5 h-5" />
+                    <span className="hidden sm:inline">
+                      {flagged[currentQuestion] ? "Unflag" : "Flag for Review"}
+                    </span>
+                  </button>
+                </div>
+
+                {currentQuestion < questions.length - 1 ? (
+                  <button
+                    onClick={() => setCurrentQuestion(currentQuestion + 1)}
+                    className="px-3 py-1 sm:px-4 sm:py-2 bg-blue-600 text-white text-sm sm:text-base rounded"
+                  >
+                    Next
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={Object.keys(userAnswers).length < questions.length}
+                    className="px-3 py-1 sm:px-4 sm:py-2 bg-green-600 text-white text-sm sm:text-base rounded disabled:bg-gray-400"
+                  >
+                    Submit
+                  </button>
+                )}
+              </div>
+            )}
+
+
+          {submitted ? (
+            questions.map((q, idx) => (
               <QuestionCard
                 key={idx}
                 id={`question-${idx}`}
@@ -259,7 +343,7 @@ export default function QuizApp() {
                 submitted={true}
               />
             ))
-          : (
+          ) : (
             <QuestionCard
               id={`question-${currentQuestion}`}
               question={questions[currentQuestion]}
@@ -267,51 +351,33 @@ export default function QuizApp() {
               userAnswer={userAnswers[currentQuestion] || []}
               submitted={false}
               handleChange={handleChange}
+              onFlagToggle={() =>
+                setFlagged((prev) => ({
+                  ...prev,
+                  [currentQuestion]: !prev[currentQuestion],
+                }))
+              }
+              isFlagged={flagged[currentQuestion]}
             />
-          )
-        }
-
-        {!submitted && (
-          <div className="flex justify-between">
-            {currentQuestion > 0 ? (
-              <button
-                onClick={() => setCurrentQuestion(currentQuestion - 1)}
-                className="px-4 py-2 bg-gray-300 rounded"
-              >
-                Previous
-              </button>
-            ) : <div />}
-
-            {currentQuestion < questions.length - 1 ? (
-              <button
-                onClick={() => setCurrentQuestion(currentQuestion + 1)}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
-              >
-                Next
-              </button>
-            ) : (
-              <button
-                onClick={handleSubmit}
-                disabled={Object.keys(userAnswers).length < questions.length}
-                className="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-400"
-              >
-                Submit
-              </button>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
-  </div>
-);
-
+  );
 }
 
-function QuestionCard({ id, question, index, userAnswer, submitted, handleChange }) {
+function QuestionCard({
+  id,
+  question,
+  index,
+  userAnswer,
+  submitted,
+  handleChange,
+}) {
   const q = question;
 
   return (
-    <div id={id} className="p-4 border rounded-lg shadow space-y-2 bg-white">
+    <div id={id} className="p-4 sm:p-6 border rounded-lg shadow space-y-2 bg-white">
       <h2 className="font-semibold whitespace-pre-wrap">
         {index + 1}. {q["Question"]}
       </h2>
@@ -328,13 +394,15 @@ function QuestionCard({ id, question, index, userAnswer, submitted, handleChange
           const color = isWrongSelection
             ? "bg-red-100 border-red-500"
             : isRightSelection || isUnselectedCorrect
-            ? "bg-green-100 border-green-500"
-            : "";
+              ? "bg-green-100 border-green-500"
+              : "";
+          
+          const selectedStyle = !submitted && selected ? "bg-blue-100 border-blue-500" : "";
 
           return (
             <label
               key={j}
-              className={`flex items-center p-2 border rounded cursor-pointer ${color}`}
+              className={`flex items-start gap-2 p-2 border rounded cursor-pointer ${color} ${selectedStyle}`}
             >
               <input
                 type={q["Question Type"]}
@@ -345,16 +413,17 @@ function QuestionCard({ id, question, index, userAnswer, submitted, handleChange
                 onChange={() =>
                   handleChange && handleChange(index, opt, q["Question Type"])
                 }
-                className="mr-2"
+                className="mt-1"
               />
-              {opt}
+              
+              <span className="break-words">{opt}</span>
             </label>
           );
         })}
       </div>
 
       {submitted && (
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-gray-600 whitespace-pre-wrap">
           <p>
             <strong>Feedback:</strong> {q["Feedback"]}
           </p>
@@ -366,3 +435,149 @@ function QuestionCard({ id, question, index, userAnswer, submitted, handleChange
     </div>
   );
 }
+
+const fetchCheckboxQuestions = async (setQuestions) => {
+  const res = await fetch(
+    "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
+  );
+  const data = await res.json();
+
+  const checkboxQuestions = data.filter(
+    (q) => q["Question Type"]?.toLowerCase() === "checkbox" //change to filter radiobox
+  );
+
+  const selected = SHUFFLE(checkboxQuestions).slice(0, 10); // limit to 10 for testing
+
+  const processed = selected.map((q) => {
+    const correct = q["Correct Answers"]
+      .split(/\s*;\s*/g)
+      .map((c) => c.trim())
+      .filter((c) => c);
+
+    const existingOptions = [
+      q["Option 1"],
+      q["Option 2"],
+      q["Option 3"],
+      q["Option 4"],
+    ];
+
+    const normalizeText = (text) =>
+      text
+        .replace(/\s+/g, " ")
+        .replace(/\u00A0/g, " ")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim()
+        .toLowerCase();
+
+    const normalizedExisting = existingOptions.map(normalizeText);
+
+    const additionalCorrect = correct.filter(
+      (c) => !normalizedExisting.includes(normalizeText(c))
+    );
+
+    const allOptions = [...existingOptions, ...additionalCorrect];
+
+    const uniqueOptions = Array.from(
+      new Map(allOptions.map((opt) => [normalizeText(opt), opt])).values()
+    );
+
+    const options = SHUFFLE(uniqueOptions);
+
+    return { ...q, correct, options };
+  });
+
+  console.log("Processed questions:", processed);
+  processed.forEach((q, i) => {
+    if (q?.options?.length > 4) {
+      console.warn(
+        `⚠️ Question at index ${i} has more than 4 options (${q.options.length}):`,
+        {
+          question: q["Question"],
+          options: q.options,
+        }
+      );
+    }
+  });
+
+  setQuestions(processed);
+};
+
+const fetchAllQuestions = async (setQuestions) => {
+  const res = await fetch(
+    "https://opensheet.elk.sh/1j4EcxTM-ee-TeVEOUWZP_ftqLzDMRGpiGD1GQr_oGwY/Form%20Responses%201"
+  );
+  const data = await res.json();
+
+  const domains = Object.keys(DOMAIN_PERCENTAGES);
+  const grouped = {};
+  domains.forEach((d) => (grouped[d] = []));
+
+  data.forEach((q) => {
+    const domain = q["Domain"].trim();
+    if (grouped[domain]) grouped[domain].push(q);
+  });
+
+  
+  const selected = domains.flatMap((domain) => {
+    const total = Math.round(DOMAIN_PERCENTAGES[domain] * 65); // adjust multiplier if needed
+    domainQuestionTotals[domain] = total; // track how many were selected
+    return SHUFFLE(grouped[domain]).slice(0, total);
+  });
+
+  const processed = SHUFFLE(selected).map((q) => {
+    const isCheckbox = q["Question Type"].toLowerCase() === "checkbox";
+
+    const correct = isCheckbox
+      ? q["Correct Answers"]
+          .split(/\s*;\s*/g)
+          .map((c) => c.trim())
+          .filter((c) => c)
+      : [q["Correct Answers"].trim()];
+
+    const existingOptions = [
+      q["Option 1"],
+      q["Option 2"],
+      q["Option 3"],
+      q["Option 4"],
+    ];
+
+    const normalizeText = (text) =>
+      text
+        .replace(/\s+/g, " ")
+        .replace(/\u00A0/g, " ")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim()
+        .toLowerCase();
+
+    const normalizedExisting = existingOptions.map(normalizeText);
+
+    const additionalCorrect = correct.filter(
+      (c) => !normalizedExisting.includes(normalizeText(c))
+    );
+
+    const allOptions = [...existingOptions, ...additionalCorrect];
+
+    const uniqueOptions = Array.from(
+      new Map(allOptions.map((opt) => [normalizeText(opt), opt])).values()
+    );
+
+    const options = SHUFFLE(uniqueOptions);
+
+    return { ...q, correct, options };
+  });
+
+  console.log("Processed questions:", processed);
+  processed.forEach((q, i) => {
+    if (q?.options?.length > 4) {
+      console.warn(
+        `⚠️ Question at index ${i} has more than 4 options (${q.options.length}):`,
+        {
+          question: q["Question"],
+          options: q.options,
+        }
+      );
+    }
+  });
+
+  setQuestions(processed);
+};
