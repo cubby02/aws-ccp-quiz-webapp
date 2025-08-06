@@ -425,10 +425,10 @@ function QuestionCard({
       {submitted && (
         <div className="text-sm text-gray-600 whitespace-pre-wrap">
           <p>
-            <strong>Feedback:</strong> {q["Feedback"]}
+            <strong>Correct Answer:</strong> {q.correct.join(", ")}
           </p>
           <p>
-            <strong>Correct Answer:</strong> {q.correct.join(", ")}
+            <strong>Feedback:</strong> {q["Feedback"]}
           </p>
         </div>
       )}
@@ -519,7 +519,7 @@ const fetchAllQuestions = async (setQuestions) => {
 
   
   const selected = domains.flatMap((domain) => {
-    const total = Math.round(DOMAIN_PERCENTAGES[domain] * 65); // adjust multiplier if needed
+    const total = Math.round(DOMAIN_PERCENTAGES[domain] * 3); // adjust multiplier if needed
     domainQuestionTotals[domain] = total; // track how many were selected
     return SHUFFLE(grouped[domain]).slice(0, total);
   });
